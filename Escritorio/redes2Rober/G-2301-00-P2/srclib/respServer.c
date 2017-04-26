@@ -1,6 +1,6 @@
 #include "UsoSockets.h"
-
-void (* pcommandRespServer[numResp])(char *)={rplAway,funcDefServer,funcDefServer,funcDefServer,funcDefServer,rplNowAway};
+//#include "conexion.h"
+void (* pcommandRespServer[numResp])(char *)={funcDefServer,funcDefServer,funcDefServer,funcDefServer,funcDefServer,rplNowAway};
 
 
 void AnalizeServer(long response, char* buf){
@@ -8,10 +8,14 @@ void AnalizeServer(long response, char* buf){
 	//if(response >301)
 		//(* pcommandRespServer [response -301])(buf);
 	switch(response){
-		case 7:
-			RemoveNick(buf);
+		case 2:
+			ServerNick(buf);
+			break;
 		case 9:
 			ServerJoin(buf);
+			break;
+		case 10:
+			ServerPart(buf);
 			break;
 		case 16:
 			ServerPrivMsg(buf);
@@ -54,25 +58,42 @@ void AnalizeServer(long response, char* buf){
 		case 79:
 			ServerEndWhoIs(buf);
 			break;
+		case 172:
+			ServerAway(buf);
+			break;
+		case 183:
+			rplWelcome(buf);
+			break;
+		case 136:
+			rplLuserClient(buf);
+			break;
+		case 135:
+			rplLuserChannels(buf);
+			break;
+		case 140:
+			rplMotd(buf);
+			break;
+		case 184:
+			rplCreated(buf);
+			break;
+		case 75:
+			rplMyInfo(buf);
+			break;
+		case 74:
+			rplYourHost(buf);
+			break;
+		case 17:
+			respNotice(buf);
+			break;
+		case 141:
+			rplStartMotd(buf);
+			break;
+		case 132:
+			rplEndMotd(buf);
+			break;
 		default:
 			funcDefServer(buf);
 	}
-}
-void RemoveNick(char* str){
-	char *prefix,*msg,**channels,*token;
-	int num,i;
-	token = strtok(str, "!");
-	token ++;
-	if(IRCParse_Quit (str, &prefix, &msg) != IRC_OK)
-		return;
-	IRCInterface_ListAllChannelsThread (&channels, &num);
-	for(i = 0; i < num; i++)
-		IRCInterface_DeleteNickChannelThread (channels[i], token);
-	for(i = 0; i < num; i++)
-		free(channels[i]);
-	free(msg);
-	return;
-	
 }
 void ServerNoTopic(char* str){
 	char *prefix,*nick,*channel,*topic,NoTopic[500];
@@ -86,22 +107,70 @@ void ServerNoTopic(char* str){
 	return;
 }
 void ServerPrivMsg(char * str){
-	char *prefix,*msgtarget,*msg,*token,*nick,*nuser,*real,*host,*nick2,*user2;
+	char *prefix,*msgtarget,*msg,*token,*nick,*nuser,*real,*host,*nick2,*user2, *tokenf;
 	if(IRCParse_Privmsg (str, &prefix, &msgtarget, &msg)!= IRC_OK)
 		return;
+	
+	tokenf=strtok(msg, " ");
+	if(strcmp(tokenf,"/001FSEND")==0){//caso en el que el privmsg se trata del envio de un fichero
+		 //"\001FSEND NOMBRE_FICHERO HOSTNAME_EMISOR PUERTO_EMISOR LONGITUD_FICHERO_BYTES"
+		 
+		 char *nombre_fichero, *hostname_emisor, * puerto_emisor, *longitud_fichero_bytes;
+		char buf [1000];
+		int puerto,socketRcv;
+		long unsigned int longitud;
+		char * data;
+		getDataFILE(&data);
+	
+		 //tokenf ++;
+		 tokenf=strtok(NULL, " ");
+		 //tokenf ++;
+		 hostname_emisor=strtok(NULL," ");
+		 //hostname_emisor++;
+		 puerto_emisor=strtok(NULL," ");
+		 //puerto_emisor++;
+		 longitud_fichero_bytes=strtok(NULL," ");
+		 //longitud_fichero_bytes++;
+		 
+		 puerto=atoi(puerto_emisor);
+		 longitud=atol(longitud_fichero_bytes);
+		 
+		 printf("\n\n DATOS %s %s %d %ld\n\n", tokenf, hostname_emisor, puerto, longitud);
+		 
+		 hostname_emisor++;
+		 printf("hostname %s", hostname_emisor);
+		 bzero(buf,1000);
+		 
+		 CrearSocketTCP(socketRcv, hostname_emisor, puerto);
+		 
+		 
+        if(recv(&socketRcv,buf,1000,0)<=0){
+            return;
+        }
+        
+        printf("BUF %s", buf);
+        
+        FILE * f;
+        f = fopen(tokenf,"w");
+        fwrite(data,sizeof(data[0]),longitud,f);
+        
+		 
+	 }else{
+	
+	
 	token = strtok(str, "!");
 	token ++;
 	if(msgtarget[0] != '#'){
 		if(IRCInterface_QueryChannelExistThread (msgtarget) != TRUE){
-			char *token2, *token3, *canal;
+			char * token2, *canal,*token3;
 			getNick(&nick);
 			getUser(&nuser);
 			getRealName(&real);
 			getServer(&host);
 			nick2 = strdup(token);
-			if(strcmp(msgtarget,nick) != 0){ // Vemos si el mensaje es enviado por nosotros o a nosotros
+			if(strcmp(msgtarget,nick) != 0){
 				IRCInterface_AddNewChannelThread(msgtarget, 0);
-				canal = strdup(msgtarget);	// El nombre del nuevo canal es del usuario a quien vas
+				canal = strdup(msgtarget);
 			}else{
 				IRCInterface_AddNewChannelThread(nick2, 0);
 				canal = strdup(nick2);
@@ -116,31 +185,16 @@ void ServerPrivMsg(char * str){
 			IRCInterface_AddNickChannelThread (canal , nick2, user2, real, token3, 2);
 			free(msgtarget);
 			msgtarget=strdup(canal);
+			free(canal);
+			}
 		}
-	}
-	if(strcmp(msg, "\001AUDIOCHAT Petition") == 0){//AUDIO 
-            char audiomsg[100];
-		int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-		setSocketUDP(sockfd);
-		listen(sockfd, 1); // se pone a la escucha el socket, máximo 1 cliente
-		struct sockaddr_in my_addr;
-		socklen_t slen = sizeof(my_addr);
-		getsockname(sockfd, (struct sockaddr*)&my_addr, &slen);
-		struct hostent *Maquina;
-		Maquina = gethostbyname ("localhost");
-		char *buf;
-		sprintf(audiomsg,"\\001AUDIOCHAT %s %d",inet_ntoa(* ((struct in_addr *)Maquina->h_addr)), ntohs(my_addr.sin_port));
-		
-		IRCMsg_Privmsg (&buf, NULL, msgtarget, msg);
-		
-		printf("%s\n",buf);
-		send(getsocketTCP(),buf,strlen(buf),0);	
-		IRC_MFree(4, &buf, &prefix, &msgtarget, &msg);
-		return;
 	}
 	IRCInterface_WriteChannelThread (msgtarget, token, msg);
 	IRC_MFree(3, &prefix, &msgtarget, &msg);
 	return;
+	
+	
+	
 }
 	
 void ServerEndWho(char *str){
@@ -150,7 +204,7 @@ void ServerReplyTopic(char *str){
 	char *prefix,*nick,*channel,*topic;
 	if(IRCParse_RplTopic (str, &prefix, &nick, &channel, &topic)!= IRC_OK)
 		return;
-	IRCInterface_SetTopic(topic);
+	//IRCInterface_SetTopic(topic);
 	IRCInterface_WriteChannelThread (channel, "*", str);
 	IRC_MFree(4,&prefix, &nick, &channel, &topic);
 	return;
@@ -201,22 +255,22 @@ void ServerWhoIsIdle(char *str){
 	IRC_MFree(5,&prefix, &nick, &nick2,  &msg, &timeElapse);
 }
 void ServerPing(char * str){
-	char*prefix = NULL,*server = NULL,*server2  = NULL,*msg = NULL,command[100];
+	char*prefix = NULL,*server = NULL,*server2  = NULL,*msg = NULL,*command=NULL;
 	if(IRCParse_Ping (str, &prefix, &server, &server2, &msg)!=IRC_OK)
 		return;
 	
 	getServer(&server2);
-	if(server){
-		server ++;
-		sprintf(command,"PONG %s %s", server2,server); 
-	}
-	else
-		sprintf(command,"PONG"); 
 	
+	
+	if(IRCMsg_Pong (&command,NULL,server2,server,msg)!=IRC_OK){
+		if(IRCMsg_Pong (&command,NULL,server2,server,NULL)!=IRC_OK)
+			return;
+	}
+		
 	printf("%s\n",command);fflush(stdout);
 	
 	send(getsocketTCP(),command,strlen(command),0);
-	//IRC_MFree(4,&prefix, &server, &server2, &msg);
+	IRC_MFree(5,&command,&prefix, &server, &server2, &msg);
 	printf("Lo hise\n");fflush(stdout);
 	return;
 }
@@ -277,10 +331,11 @@ void ServerJoin(char * str){
 	}else{
 		IRCMsg_Who (&command, NULL, channel, NULL);
 		send(getsocketTCP(), command, strlen(command),0);
-		IRCInterface_PlaneRegisterOutMessage(command);
+		IRCInterface_PlaneRegisterInMessage(command);
 		free(command);
 	}
 	IRC_MFree(4,&prefix,&password, &nick,&msg);
+	
 		
 }
 void ServerNames(char * str){
@@ -293,49 +348,299 @@ void ServerNames(char * str){
 
 
 }
-void rplWelcome(char * str){
+void ServerPart(char * str){
+	char *prefix,*channel,*msg, * nick, *command, *token, *mensaje;
+
+	if(IRCParse_Part (str, &prefix, &channel, &msg) != IRC_OK){
 	
-	char * prefix, *nick, * msg;
+		return;
+	}
+	getNick(&nick);
 	
-	IRCParse_RplWelcome (str, &prefix, &nick, &msg);
+
 	
-	/*es posible que no sea necesario ni parsear el welcome puesto que si se recibe esto indica que el usuario ya se ha registrado correctamente*/
-	/*tal vez habria que crear el usuario aqui */
+	if(strcmp(msg,"Saliendo")==0){/*Caso en el que el part es de otro cliente*/
+		
+		token=strtok(str,"!");
+		token++;
+		printf("\n nombre %s\n", token);
+		IRCInterface_DeleteNickChannelThread (channel, token);
+		IRCMsg_Who (&command, NULL, channel, NULL);
+		send(getsocketTCP(), command, strlen(command),0);
+		IRCInterface_PlaneRegisterInMessage(command);
+		free(command);
+		
+		mensaje =(char *)malloc(sizeof(char)*100);
+		strcat(mensaje, token);
+		strcat(mensaje, " ha abandonado el canal ");
+		strcat(mensaje,channel );
+		
+		IRCInterface_WriteChannelThread (channel, "*", mensaje);
+		
+		free(mensaje);
+		
+	}else{
 	
-	free(prefix);
-	free(nick);
-	free(msg);
+	//IRCInterface_RemoveAllNicksChannelThread (channel);Se supone que deberian cerrarse todos pero no funciona
+		IRCInterface_DeleteNickChannelThread (channel, nick);
+	
+		IRCInterface_WriteChannelThread (channel, "*", "Has abandonado el canal. (Saliendo)");
+	}
+	IRC_MFree(4,&prefix,&channel,&msg, &nick);
+	return;
+
+
 }
-void rplAway(char * str){
+
+void ServerAway(char * str){
+	char *prefix,*channel,*msg;
+
+	if(IRCParse_Away (str, &prefix, &msg) != IRC_OK){
 	
-	char * prefix, *nick, *nick2, * msg, *command;
-	IRCParse_RplAway (str, &prefix, &nick, &nick2, &msg);
+		return;
+	}
 	
-	IRCMsg_Away (&command, nick2, msg);
 	
-	IRCInterface_WriteSystemThread (nick, msg);
+	IRCInterface_WriteSystemThread ("*", "You have been marked as being away");
 	
-	free(command);
-	free(nick);
-	free(nick2);
-	free(msg);
-	free(prefix);
+	channel= IRCInterface_ActiveChannelName();
+	//no se como poner el nick en color ausente
 	
+	
+	IRC_MFree(2,&prefix,&msg);
+	return;
+
+
 }
-void rplNowAway(char * str){
+void ServerNick(char * str){
+	char *prefix,*newnick, * nick, *channel, *nickaux, *msg;
+	channel =NULL;
+
+	if(IRCParse_Nick (str, &prefix, &nickaux, &newnick) != IRC_OK){
 	
-	//llamar a la funcion que ponga el nombre del cliente en un tono mas claro
+		return;
+	}
+
+	channel = IRCInterface_ActiveChannelName();
 	
+	getNick(&nick);
+	
+	//hacer setnick ()?
+	
+	IRCInterface_ChangeNickThread (nick, newnick);
+	
+	msg= strdup("Usted es ahora reconocido como ");
+	strcat(msg, newnick);
+	
+	if(channel!=NULL){
+		
+		
+		IRCInterface_WriteChannelThread (channel, "*", msg);
+	}
+	
+	IRCInterface_WriteSystemThread ("*", msg);
+	IRC_MFree(5,&prefix,&newnick, &nick, &nickaux, &msg);
+	return;
+
+
 }
+
+
 void respNotice(char * str){
 	
 	char * prefix, *msgtarget, *msg, *nick;
 	
 	IRCParse_Notice (str, &prefix, &msgtarget, &msg);
 	getNick(&nick);
-	IRCInterface_WriteSystemThread(nick, msg);
+	IRCInterface_WriteSystemThread("*", msg);
 	
 	IRC_MFree(4, &prefix, &msgtarget, &msg, &nick);
 }
+
+void rplMyInfo(char * str){
+	
+	char * prefix, *nick, *servername, *version, *availableusermodes, *availablechannelmodes, *addedg, *msg;
+	
+	//servername = getServer();
+	
+	IRCParse_RplMyInfo (str, &prefix,&nick,
+	 &servername, &version, &availableusermodes, 
+	 &availablechannelmodes, &addedg);
+	 
+	 //printf("servername %s, version %s availableusermodes %s availablechannelmodes %s addedg %s ",
+	 //servername, version, availableusermodes, availablechannelmodes, addedg );
+	 
+	 msg= (char *)malloc(sizeof(char)*100);
+	 
+	 strcat(msg, servername);
+	 strcat(msg, " ");
+	 strcat(msg, version);
+	 strcat(msg, " ");
+	 strcat(msg, availableusermodes);
+	 strcat(msg, " ");
+	 strcat(msg, availablechannelmodes);
+	 
+	 //printf("MENSAJE %s", msg);
+	 	
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(8,&msg, &prefix, &nick, &servername, &version, &availableusermodes, &availablechannelmodes, &addedg);
+	
+}
+void rplLuserClient(char * str){
+	
+	char * prefix, *nick, *msg;
+	int  nusers, ninvisibles, nservers;
+	//servername = getServer();
+	
+	
+	IRCParse_RplLuserClient (str, &prefix, &nick, &msg,
+	 &nusers, &ninvisibles, &nservers);
+	
+		printf("MENSAJE %s, ", msg);
+	
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(3, &prefix, &nick, &msg);
+	
+	
+}
+void rplLuserChannels(char * str){
+	
+	char * prefix, *nick, *msg;
+	int  nchannels;
+	//servername = getServer();
+	
+	
+	IRCParse_RplLuserChannels (str, &prefix, &nick, &nchannels, &msg);
+	
+	
+	
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(3, &prefix, &nick, &msg);
+	
+	
+}
+
+void rplMotd(char * str){
+	
+	char * prefix, *nick, *msg;
+	 IRCParse_RplMotd (str, &prefix, &nick, &msg);
+	 
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(3, &prefix, &nick, &msg);
+	
+}
+void rplEndMotd(char * str){
+	
+	char * prefix, *nick, *msg;
+	 IRCParse_RplEndOfMotd(str, &prefix, &nick, &msg);
+	 printf("MENSAJE %s", msg);
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(3, &prefix, &nick, &msg);
+	
+	
+}
+
+void rplStartMotd(char * str){
+	
+	char * prefix, *nick, *msg, * server;
+	 IRCParse_RplMotdStart (str, &prefix, &nick, &msg, &server);
+	 
+	IRCInterface_WriteSystemThread("*", msg);
+	IRC_MFree(4, &prefix, &nick, &msg, &server);
+	
+	
+}
+void rplWelcome(char * str){
+	
+	char * prefix, *nick, * msg, *token;
+	
+	IRCParse_RplWelcome (str, &prefix, &nick, &msg);
+	
+	/*es posible que no sea necesario ni parsear el welcome puesto que si se recibe esto indica que el usuario ya se ha registrado correctamente*/
+	/*tal vez habria que crear el usuario aqui */
+	IRCInterface_WriteSystemThread ("*", msg);
+	
+	token = strtok(msg, "!");
+	token = strtok(NULL, "!");
+	
+	
+	setPrefix(token);
+	
+	free(prefix);
+	free(nick);
+	free(msg);
+}
+
+void rplYourHost(char * str){
+	
+	char * prefix, *nick, * msg, *servername, * versionname;
+	
+	IRCParse_RplYourHost (str, &prefix, &nick, &msg, &servername, &versionname);
+	
+	/*es posible que no sea necesario ni parsear el welcome puesto que si se recibe esto indica que el usuario ya se ha registrado correctamente*/
+	/*tal vez habria que crear el usuario aqui */
+	IRCInterface_WriteSystemThread ("*", msg);
+	
+	IRC_MFree(2, &servername, &versionname);
+	free(prefix);
+	free(nick);
+	free(msg);
+	
+	
+}
+void rplCreated(char * str){
+	
+	char * prefix, *nick, * msg, *timedate;
+	
+	IRCParse_RplCreated(str, &prefix, &nick, &timedate, &msg);
+		
+	
+	printf("Mensaje en created %s ", msg);
+	IRCInterface_WriteSystemThread ("*", msg);
+	
+	free(timedate);
+	free(prefix);
+	free(nick);
+	free(msg);
+	
+	
+}
+
+void rplNowAway(char * str){
+	
+	//llamar a la funcion que ponga el nombre del cliente en un tono mas claro
+	
+}
+
+void* mandarFichero(void *arg){
+	
+	struct sockaddr_in * clienaddr = (struct sockaddr_in *)arg;
+	
+    socklen_t clilen;
+	
+	int socketTCPFILE;
+	char * dataFile;
+	long unsigned int length;
+	
+	length = getLenght();
+	socketTCPFILE=getsocketTCPFILE();
+	
+	
+	int connf = accept(socketTCPFILE,(struct sockaddr *) clienaddr, &clilen);
+	
+	getDataFILE(&dataFile);
+	
+	send(connf, dataFile, length, 0);
+	
+	
+}
+
+
+
+
+
+
+
+
 
 

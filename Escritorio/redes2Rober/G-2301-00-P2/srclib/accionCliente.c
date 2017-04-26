@@ -1,5 +1,5 @@
 #include "UsoSockets.h"
-
+//#include "conexion.h"
 void (* pcommandUserCliente[numActions])(char *)={names,funcDef,list,join,part,funcDef,quit,nick,away,whois, funcDef, kick,topic,funcDef,msgpriv};
 
 
@@ -12,7 +12,7 @@ void Analize(long response, char* string){
 		char* command,*nick;
 		IRCMsg_Privmsg (&command, NULL, canal, string);
 		send(getsocketTCP(), command, strlen(command),0);
-		IRCInterface_PlaneRegisterOutMessage (command);
+		IRCInterface_PlaneRegisterInMessage (command);
 		getNick(&nick);
 		IRCInterface_WriteChannel(canal, nick, string);
 		IRC_MFree(3,&canal,&nick,&command);
@@ -33,7 +33,7 @@ void names(char * str){
 	IRCMsg_Names (&command, NULL, channel, targetserver);
 
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 
 	free(targetserver);
 	free(command);
@@ -48,7 +48,7 @@ void list (char * str){
 	IRCUserParse_List(str, &channel, &target);
 	IRCMsg_List(&command, NULL, channel, target);
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage(command);
+	IRCInterface_PlaneRegisterInMessage(command);
 
 	free(channel);
 	free(target);
@@ -65,11 +65,11 @@ void join(char * str){
 
 	IRCMsg_Join (&command, NULL, channel, password, NULL);
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage(command);
+	IRCInterface_PlaneRegisterInMessage(command);
 	free(command);
 	IRCMsg_Who (&command, NULL, channel, NULL);
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage(command);
+	IRCInterface_PlaneRegisterInMessage(command);
 	/*free(command);
 	IRCMsg_Topic(&command, NULL, channel, NULL);
 	send(getsocketTCP(), command, strlen(command),0);
@@ -115,7 +115,7 @@ void part(char * str){
 
 	IRCMsg_Part (&command, NULL, channel, msg);
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	//IRCInterface_RemoveAllNicksChannelThread(channel);
 	
 	free(msg);
@@ -130,7 +130,7 @@ void quit(char * str){
 	IRCMsg_Quit (&command, NULL, reason);
 
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	IRCInterface_WriteSystem ("*", "Desconectado()");
 	IRC_MFree(2,&reason,&command);
 	FreeUser();
@@ -138,19 +138,20 @@ void quit(char * str){
 
 void nick(char * str){
 
-	char * newnick, *command,*nick;
+	char * newnick, *command;
 	
-	getNick(&nick);
 
 	IRCUserParse_Nick (str, &newnick);
 	
-	IRCMsg_Nick (&command, NULL,nick , newnick);
-
+	
+	IRCMsg_Nick (&command, NULL,newnick , NULL);
+	
+	
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	
 	free(newnick);
-	free(nick);
+	
 	free(command);
 
 }
@@ -159,11 +160,14 @@ void away(char * str){
 	char * reason, *command;
 
 	IRCUserParse_Away(str, &reason);
+	
+	if(reason == NULL)
+		reason=strdup("Estoy ocupado");
 
 	IRCMsg_Away (&command, NULL, reason);
 
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	
 	free(reason);
 	free(command);
@@ -178,7 +182,7 @@ void whois(char * str){
 
 	IRCMsg_Whois(&command, NULL, NULL, mask);
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	
 	
 	free(mask);
@@ -200,7 +204,7 @@ void topic(char * str){
 	IRCMsg_Topic(&command, NULL, channel, topic);
 	
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	free(topic);
 	free(command);
 	
@@ -215,12 +219,12 @@ void msgpriv(char * str){
 	IRCMsg_Privmsg (&command, NULL, nickorchannel, msg);
 	
 	send(getsocketTCP(), command, strlen(command),0);
-	IRCInterface_PlaneRegisterOutMessage (command);
+	IRCInterface_PlaneRegisterInMessage (command);
 	getNick(&nick);
 	getUser(&nuser);
 	getRealName(&real);
 	getServer(&host);
-	if(IRCInterface_QueryChannelExist (nickorchannel) != TRUE){
+	if(IRCInterface_QueryChannelExist(nickorchannel) != TRUE){
 		IRCInterface_AddNewChannel(nickorchannel, 0);
 		IRCInterface_AddNickChannel (nickorchannel , nick, nuser, real, host, 2);
 		IRCInterface_AddNickChannel (nickorchannel , nickorchannel, nickorchannel, nickorchannel, host, 2);
